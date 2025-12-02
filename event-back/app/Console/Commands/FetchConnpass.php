@@ -52,8 +52,10 @@ class FetchConnpass extends Command
         $this->info(count($events) . '件のイベントが見つかりました。保存を開始します...');
 
         foreach ($events as $apiEvent) {
+            $this->info(print_r($apiEvent, true));
+
             // event_id がない場合はスキップ（念のため）
-            if (!isset($apiEvent['event_id'])) {
+            if (!isset($apiEvent['id'])) {
                 continue;
             }
 
@@ -62,12 +64,12 @@ class FetchConnpass extends Command
                 // 1. 検索条件 (重複チェック)
                 [
                     'source_name' => 'connpass',
-                    'source_event_id' => (string)$apiEvent['event_id'],
+                    'source_event_id' => (string)$apiEvent['id'],
                 ],
                 // 2. 保存するデータ内容
                 [
                     'title' => $apiEvent['title'] ?? 'タイトルなし',
-                    'event_url' => $apiEvent['event_url'] ?? '',
+                    'event_url' => $apiEvent['url'] ?? '',
                     'description' => $apiEvent['description'] ?? '',
                     'started_at' => $apiEvent['started_at'] ?? null,
                     'ended_at' => $apiEvent['ended_at'] ?? null,
