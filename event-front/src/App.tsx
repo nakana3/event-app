@@ -26,6 +26,24 @@ function App() {
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif' }}>
       <h1>🎉 イベント一覧</h1>
+
+      <div style={{ marginBottom: '20px' }}>
+        <a 
+          href="http://localhost:8001/auth/google"
+          style={{
+            display: 'inline-block',
+            padding: '10px 20px',
+            backgroundColor: '#4285F4',
+            color: 'white',
+            borderRadius: '5px',
+            textDecoration: 'none',
+            fontWeight: 'bold'
+          }}
+        >
+          Googleでログイン
+        </a>
+      </div>
+
       <p>Laravelから取得したイベントを表示しています</p>
       
       <div style={{ display: 'grid', gap: '20px', marginTop: '20px' }}>

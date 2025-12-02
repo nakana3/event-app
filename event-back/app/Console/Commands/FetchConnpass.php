@@ -5,87 +5,131 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 use App\Models\Event;
+use Carbon\Carbon;
 
 class FetchConnpass extends Command
 {
-    protected $signature = 'fetch:connpass';
-    // コマンドの説明
-    protected $description = 'Connpass API v2 test';
+    // コマンド実行時に --mode=daily のようにオプションを指定できるようにする
+    protected $signature = 'fetch:connpass {--mode=daily : 取得モード (daily, weekly, monthly)}';
 
-    /**
-     * コマンドの実行
-     */
+    protected $description = 'Connpass API v2 からイベントを取得・保存します';
+
     public function handle()
     {
-        $this->info('接続テスト開始');
+        $mode = $this->option('mode');
+        $this->info("=== {$mode} モードで実行開始 ===");
 
         // 設定の読み込み
-        $baseUrl = config('services.connpass.base_url');
+        $baseUrl = config('services.connpass.base_url'); // 末尾は events/
         $apiKey = config('services.connpass.api_key');
 
-        // APIキーが設定されているか確認
         if (empty($apiKey)) {
             $this->error('エラー：APIキーが設定されていません。');
             return;
         }
 
-        $url = $baseUrl  . 'events/?count=1';
-        $this->info('アクセス先：' . $url);
+        // --- モードごとのパラメータ設定 ---
+        $params = [
+            'count' => 100, // 一度の最大取得件数
+            'format' => 'json',
+        ];
 
-        $response = Http::withHeaders([
-            'X-API-KEY' => $apiKey,
-            'User-Agent' => 'LaravelApp/1.0',
-        ])->get($url);
+        if ($mode === 'daily') {
+            // [日次] 新規チェック: 新着順(order=3)で直近100件だけ確認すればOK
+            // ※全件取る必要はないので、このモードだけループしない設定にします
+            $params['order'] = 3; // 新着順
+            $this->fetchAndSave($baseUrl, $apiKey, $params, false); // false = ループしない
 
-        if ($response->failed()) {
-            $this->error('通信失敗：' . $response->status());
-            $this->error('詳細：' . $response->body());
-            return;
+        } elseif ($mode === 'weekly') {
+            // [週次] 直近1週間の更新チェック: 開催日順(order=2)で、今日から7日後まで
+            $params['order'] = 2; // 開催日順
+
+            // ymdパラメータで範囲指定 (例: 20251201,20251202...)
+            // Connpassは範囲指定ができないので、カンマ区切りで7日分指定します
+            $dates = [];
+            for ($i = 0; $i < 7; $i++) {
+                $dates[] = Carbon::today()->addDays($i)->format('Ymd');
+            }
+            $params['ymd'] = implode(',', $dates);
+
+            // 全件取得モードで実行
+            $this->fetchAndSave($baseUrl, $apiKey, $params, true);
+        } elseif ($mode === 'monthly') {
+            // [月次] 今月の全チェック: ymパラメータで月指定
+            $params['order'] = 2;
+            $params['ym'] = Carbon::today()->format('Ym'); // 今月 (例: 202512)
+
+            // 全件取得モードで実行
+            $this->fetchAndSave($baseUrl, $apiKey, $params, true);
         }
 
-        $this->info('通信成功：' . $response->status());
+        $this->info("=== 全処理完了 ===");
+    }
 
-        $data = $response->json();
+    /**
+     * APIからデータを取得して保存する共通処理
+     * @param bool $fetchAll trueならページネーションして全件取得する
+     */
+    private function fetchAndSave($baseUrl, $apiKey, $params, $fetchAll)
+    {
+        $start = 1; // 取得開始位置
 
-        $events = $data['events'] ?? [];
+        do {
+            // ページネーション用の位置指定
+            $params['start'] = $start;
 
-        $this->info(count($events) . '件のイベントが見つかりました。保存を開始します...');
+            $this->info("取得開始: start={$start}...");
 
-        foreach ($events as $apiEvent) {
-            $this->info(print_r($apiEvent, true));
+            $response = Http::withHeaders([
+                'X-API-Key' => $apiKey,
+                'User-Agent' => 'LaravelApp/1.0',
+            ])->get($baseUrl, $params);
 
-            // event_id がない場合はスキップ（念のため）
-            if (!isset($apiEvent['id'])) {
-                continue;
+            if ($response->failed()) {
+                $this->error('通信失敗: ' . $response->status());
+                // エラーなら中断
+                return;
             }
 
-            // DBに保存（あれば更新、なければ新規作成）
-            Event::updateOrInsert(
-                // 1. 検索条件 (重複チェック)
-                [
-                    'source_name' => 'connpass',
-                    'source_event_id' => (string)$apiEvent['id'],
-                ],
-                // 2. 保存するデータ内容
-                [
-                    'title' => $apiEvent['title'] ?? 'タイトルなし',
-                    'event_url' => $apiEvent['url'] ?? '',
-                    'description' => $apiEvent['description'] ?? '',
-                    'started_at' => $apiEvent['started_at'] ?? null,
-                    'ended_at' => $apiEvent['ended_at'] ?? null,
+            $data = $response->json();
+            $events = $data['events'] ?? [];
+            $resultsAvailable = $data['results_available'] ?? 0; // 総ヒット件数
 
-                    // 住所と会場名を結合して保存
-                    'location_text' => ($apiEvent['address'] ?? '') . ' ' . ($apiEvent['place'] ?? ''),
+            $this->info("取得件数: " . count($events) . " / 総件数: {$resultsAvailable}");
 
-                    'updated_at' => now(),
-                    // created_at は updateOrInsert では自動設定されないため、
-                    // 厳密にはここに含まないのが一般的ですが、簡易的に updated_at で代用します
-                ]
-            );
+            // --- 保存処理 ---
+            foreach ($events as $apiEvent) {
+                if (!isset($apiEvent['id'])) continue;
 
-            $this->info("保存完了: " . ($apiEvent['title'] ?? '不明なタイトル'));
-        }
+                Event::updateOrInsert(
+                    ['source_name' => 'connpass', 'source_event_id' => (string)$apiEvent['id']],
+                    [
+                        'title' => $apiEvent['title'] ?? 'タイトルなし',
+                        'event_url' => $apiEvent['url'] ?? '',
+                        'description' => $apiEvent['description'] ?? '',
+                        'started_at' => $apiEvent['started_at'] ?? null,
+                        'ended_at' => $apiEvent['ended_at'] ?? null,
+                        'location_text' => ($apiEvent['address'] ?? '') . ' ' . ($apiEvent['place'] ?? ''),
+                        'updated_at' => now(),
+                    ]
+                );
+            }
+            $this->info("保存完了 (このページの分)");
 
-        $this->info('全ての処理が完了しました！');
+            // ループしないモードならここで終了
+            if (!$fetchAll) {
+                break;
+            }
+
+            // 次の開始位置をセット
+            $start += 100;
+
+            // ★重要: API制限対策 (1秒に1回制限)
+            // 次のページがある場合のみ待機
+            if ($start <= $resultsAvailable) {
+                $this->info("API制限のため1秒待機中...");
+                sleep(1);
+            }
+        } while ($start <= $resultsAvailable); // 全件取り終わるまでループ
     }
 }

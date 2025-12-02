@@ -58,6 +58,16 @@ services:
             PMA_HOST: mysql
             PMA_USER: sail
             PMA_PASSWORD: password
+    frontend:
+        image: node:20-alpine
+        ports:
+            - '5174:5173'
+        working_dir: /app
+        volumes:
+            - ../event-front:/app
+        command: sh -c "npm install && npm run dev"
+        networks:
+            - sail
 networks:
     sail:
         driver: bridge
