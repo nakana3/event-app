@@ -10,4 +10,10 @@ class Event extends Model
     use HasFactory;
 
     protected $guarded = [];
+
+    // EventはたくさんのUserに関わられている
+    public function users()
+    {
+        return $this->belongsToMany(User::class)->withPivot('status')->withTimestamps();
+    }
 }
