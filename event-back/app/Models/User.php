@@ -45,4 +45,10 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    // UserはたくさんのEventに関わっている
+    public function events()
+    {
+        return $this->belongsToMany(Event::class)->withPivot('status')->withTimestamps();
+    }
 }
