@@ -49,8 +49,41 @@ class FetchConnpass extends Command
 
         $events = $data['events'] ?? [];
 
+        $this->info(count($events) . '件のイベントが見つかりました。保存を開始します...');
+
         foreach ($events as $apiEvent) {
-            $this->info(print_r($apiEvent, true));
+            // event_id がない場合はスキップ（念のため）
+            if (!isset($apiEvent['event_id'])) {
+                continue;
+            }
+
+            // DBに保存（あれば更新、なければ新規作成）
+            Event::updateOrInsert(
+                // 1. 検索条件 (重複チェック)
+                [
+                    'source_name' => 'connpass',
+                    'source_event_id' => (string)$apiEvent['event_id'],
+                ],
+                // 2. 保存するデータ内容
+                [
+                    'title' => $apiEvent['title'] ?? 'タイトルなし',
+                    'event_url' => $apiEvent['event_url'] ?? '',
+                    'description' => $apiEvent['description'] ?? '',
+                    'started_at' => $apiEvent['started_at'] ?? null,
+                    'ended_at' => $apiEvent['ended_at'] ?? null,
+
+                    // 住所と会場名を結合して保存
+                    'location_text' => ($apiEvent['address'] ?? '') . ' ' . ($apiEvent['place'] ?? ''),
+
+                    'updated_at' => now(),
+                    // created_at は updateOrInsert では自動設定されないため、
+                    // 厳密にはここに含まないのが一般的ですが、簡易的に updated_at で代用します
+                ]
+            );
+
+            $this->info("保存完了: " . ($apiEvent['title'] ?? '不明なタイトル'));
         }
+
+        $this->info('全ての処理が完了しました！');
     }
 }
