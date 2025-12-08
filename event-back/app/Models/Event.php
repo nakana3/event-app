@@ -14,6 +14,18 @@ class Event extends Model
     // EventはたくさんのUserに関わられている
     public function users()
     {
-        return $this->belongsToMany(User::class)->withPivot('status')->withTimestamps();
+        return $this->belongsToMany(User::class)
+            ->withPivot('status')
+            ->withTimestamps();
+    }
+
+    protected $appends = ['is_registered'];
+
+    public function getIsRegisteredAttribute()
+    {
+        if (!auth('sanctum')->check()) {
+            return false;
+        }
+        return $this->users()->where('user_id', auth('sanctum')->id())->exists();
     }
 }
