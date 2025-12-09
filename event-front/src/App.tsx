@@ -88,7 +88,7 @@ function EventList() {
   return (
     <div style={{ padding: '40px', fontFamily: 'sans-serif' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h1>🎉 Tech Events</h1>
+        <h1>🎉 Evently</h1>
         {isLoggedIn ? (
           <button onClick={handleLogout} style={{ padding: '8px 16px', cursor: 'pointer' }}>ログアウト</button>
         ) : (
